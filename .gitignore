@@ -1,0 +1,77 @@
+# Binaries for programs and plugins
+stackvm-asm
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+coverage.txt
+coverage.html
+
+# Dependency directories
+vendor/
+
+# Go workspace file
+go.work
+go.work.sum
+
+# Environment variables
+.env
+.env.local
+
+# IDE - GoLand / IntelliJ
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# IDE - VSCode
+.vscode/
+*.code-workspace
+
+# IDE - Vim
+*.swp
+*.swo
+*.swn
+*~
+
+# IDE - Emacs
+\#*\#
+.\#*
+
+# OS - macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+
+# OS - Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# OS - Linux
+.directory
+.Trash-*
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+
+# Build output
+dist/
+build/
+bin/
+
+# Debug files
+debug
+__debug_bin
