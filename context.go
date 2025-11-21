@@ -55,4 +55,12 @@ type ExecutionContext interface {
 
 	// IsHalted returns true if execution has been halted.
 	IsHalted() bool
+
+	// User Data
+
+	// UserData returns a map for storing and retrieving custom execution context data.
+	// This allows instruction handlers to access per-execution information.
+	// The map is created when the execution context is initialized.
+	// Safe for concurrent read/write within a single execution (not across executions).
+	UserData() map[string]interface{}
 }

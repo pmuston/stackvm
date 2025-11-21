@@ -53,6 +53,10 @@ func (e *executor) Execute(program Program, memory Memory, opts ExecuteOptions) 
 		deadline = startTime.Add(opts.Timeout)
 	}
 
+	// Create execution context once for the entire execution
+	// This ensures UserData persists across custom instructions
+	execCtx := newExecutionContext(e, memory)
+
 	instructions := program.Instructions()
 
 	// Main execution loop
@@ -100,7 +104,7 @@ func (e *executor) Execute(program Program, memory Memory, opts ExecuteOptions) 
 		e.instrCount++
 
 		// Execute instruction
-		if err := e.executeInstruction(inst, memory, maxStackDepth); err != nil {
+		if err := e.executeInstruction(inst, memory, maxStackDepth, execCtx); err != nil {
 			return &Result{
 				InstructionCount: e.instrCount,
 				StackDepth:       len(e.stack),
@@ -140,7 +144,7 @@ func (e *executor) Reset() {
 }
 
 // executeInstruction executes a single instruction.
-func (e *executor) executeInstruction(inst Instruction, memory Memory, maxStackDepth int) error {
+func (e *executor) executeInstruction(inst Instruction, memory Memory, maxStackDepth int, execCtx *executionContextImpl) error {
 	var err error
 
 	switch inst.Opcode {
@@ -348,8 +352,8 @@ func (e *executor) executeInstruction(inst Instruction, memory Memory, maxStackD
 		if inst.Opcode >= 128 && e.config.InstructionRegistry != nil {
 			handler, exists := e.config.InstructionRegistry.Get(inst.Opcode)
 			if exists {
-				ctx := newExecutionContext(e, memory)
-				return handler.Execute(ctx, inst.Operand)
+				// Reuse the execution context to maintain UserData across instructions
+				return handler.Execute(execCtx, inst.Operand)
 			}
 		}
 		return ErrInvalidOpcode

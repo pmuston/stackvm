@@ -288,3 +288,321 @@ func TestRegistryConcurrency(t *testing.T) {
 		t.Errorf("List() returned %d opcodes, want 10", len(opcodes))
 	}
 }
+
+func TestUserDataNonNil(t *testing.T) {
+	registry := NewInstructionRegistry()
+
+	// Create a custom instruction that checks UserData is non-nil
+	checkUserDataHandler := &mockHandler{
+		name: "CHECKUD",
+		fn: func(ctx ExecutionContext, operand int32) error {
+			userData := ctx.UserData()
+			if userData == nil {
+				t.Error("UserData() returned nil")
+			}
+			return nil
+		},
+	}
+
+	registry.Register(128, checkUserDataHandler)
+
+	vm := NewWithConfig(Config{
+		StackSize:           256,
+		InstructionRegistry: registry,
+	})
+
+	program := NewProgram([]Instruction{
+		NewInstruction(128, 0), // Custom instruction that checks UserData
+		NewInstruction(OpHALT, 0),
+	})
+
+	memory := NewSimpleMemory(0)
+	_, err := vm.Execute(program, memory, ExecuteOptions{})
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+}
+
+func TestUserDataStoreAndRetrieve(t *testing.T) {
+	registry := NewInstructionRegistry()
+
+	// Create a custom instruction that stores data
+	storeHandler := &mockHandler{
+		name: "STORE_UD",
+		fn: func(ctx ExecutionContext, operand int32) error {
+			ctx.UserData()["test_key"] = "test_value"
+			ctx.UserData()["number"] = 42
+			ctx.UserData()["float"] = 3.14
+			return nil
+		},
+	}
+
+	// Create a custom instruction that retrieves and verifies data
+	retrieveHandler := &mockHandler{
+		name: "RETRIEVE_UD",
+		fn: func(ctx ExecutionContext, operand int32) error {
+			userData := ctx.UserData()
+
+			// Check string value
+			if val, ok := userData["test_key"]; !ok {
+				t.Error("test_key not found in UserData")
+			} else if str, ok := val.(string); !ok || str != "test_value" {
+				t.Errorf("test_key = %v, want 'test_value'", val)
+			}
+
+			// Check int value
+			if val, ok := userData["number"]; !ok {
+				t.Error("number not found in UserData")
+			} else if num, ok := val.(int); !ok || num != 42 {
+				t.Errorf("number = %v, want 42", val)
+			}
+
+			// Check float value
+			if val, ok := userData["float"]; !ok {
+				t.Error("float not found in UserData")
+			} else if f, ok := val.(float64); !ok || f != 3.14 {
+				t.Errorf("float = %v, want 3.14", val)
+			}
+
+			return nil
+		},
+	}
+
+	registry.Register(128, storeHandler)
+	registry.Register(129, retrieveHandler)
+
+	vm := NewWithConfig(Config{
+		StackSize:           256,
+		InstructionRegistry: registry,
+	})
+
+	program := NewProgram([]Instruction{
+		NewInstruction(128, 0), // Store data
+		NewInstruction(129, 0), // Retrieve and verify data
+		NewInstruction(OpHALT, 0),
+	})
+
+	memory := NewSimpleMemory(0)
+	_, err := vm.Execute(program, memory, ExecuteOptions{})
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+}
+
+func TestUserDataPersistsThroughoutExecution(t *testing.T) {
+	registry := NewInstructionRegistry()
+
+	// Create a counter instruction that increments a counter in UserData
+	counterHandler := &mockHandler{
+		name: "INCREMENT",
+		fn: func(ctx ExecutionContext, operand int32) error {
+			userData := ctx.UserData()
+			count, ok := userData["counter"]
+			if !ok {
+				userData["counter"] = 1
+			} else {
+				userData["counter"] = count.(int) + 1
+			}
+			return nil
+		},
+	}
+
+	// Create an instruction to verify the final count
+	verifyHandler := &mockHandler{
+		name: "VERIFY",
+		fn: func(ctx ExecutionContext, operand int32) error {
+			userData := ctx.UserData()
+			count, ok := userData["counter"]
+			if !ok {
+				t.Error("counter not found in UserData")
+				return nil
+			}
+			expectedCount := int(operand)
+			if count.(int) != expectedCount {
+				t.Errorf("counter = %d, want %d", count.(int), expectedCount)
+			}
+			return nil
+		},
+	}
+
+	registry.Register(130, counterHandler)
+	registry.Register(131, verifyHandler)
+
+	vm := NewWithConfig(Config{
+		StackSize:           256,
+		InstructionRegistry: registry,
+	})
+
+	// Call counter instruction 5 times, then verify count is 5
+	program := NewProgram([]Instruction{
+		NewInstruction(130, 0), // Increment (1)
+		NewInstruction(130, 0), // Increment (2)
+		NewInstruction(130, 0), // Increment (3)
+		NewInstruction(130, 0), // Increment (4)
+		NewInstruction(130, 0), // Increment (5)
+		NewInstruction(131, 5), // Verify count is 5
+		NewInstruction(OpHALT, 0),
+	})
+
+	memory := NewSimpleMemory(0)
+	_, err := vm.Execute(program, memory, ExecuteOptions{})
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+}
+
+func TestUserDataSeparateAcrossExecutions(t *testing.T) {
+	registry := NewInstructionRegistry()
+
+	// Track execution count across VM executions
+	executionCount := 0
+
+	// Create an instruction that stores execution-specific data
+	storeExecDataHandler := &mockHandler{
+		name: "STORE_EXEC",
+		fn: func(ctx ExecutionContext, operand int32) error {
+			executionCount++
+			ctx.UserData()["exec_id"] = executionCount
+			return nil
+		},
+	}
+
+	// Create an instruction that verifies the execution ID matches expected
+	verifyExecHandler := &mockHandler{
+		name: "VERIFY_EXEC",
+		fn: func(ctx ExecutionContext, operand int32) error {
+			userData := ctx.UserData()
+			execID, ok := userData["exec_id"]
+			if !ok {
+				t.Error("exec_id not found in UserData")
+				return nil
+			}
+			expectedID := int(operand)
+			if execID.(int) != expectedID {
+				t.Errorf("exec_id = %d, want %d", execID.(int), expectedID)
+			}
+			return nil
+		},
+	}
+
+	registry.Register(132, storeExecDataHandler)
+	registry.Register(133, verifyExecHandler)
+
+	vm := NewWithConfig(Config{
+		StackSize:           256,
+		InstructionRegistry: registry,
+	})
+
+	memory := NewSimpleMemory(0)
+
+	// Execute first program
+	program1 := NewProgram([]Instruction{
+		NewInstruction(132, 0), // Store exec_id (will be 1)
+		NewInstruction(133, 1), // Verify it's 1
+		NewInstruction(OpHALT, 0),
+	})
+	_, err := vm.Execute(program1, memory, ExecuteOptions{})
+	if err != nil {
+		t.Fatalf("Execute 1 failed: %v", err)
+	}
+
+	// Execute second program - UserData should be fresh
+	program2 := NewProgram([]Instruction{
+		NewInstruction(132, 0), // Store exec_id (will be 2)
+		NewInstruction(133, 2), // Verify it's 2 (not 1)
+		NewInstruction(OpHALT, 0),
+	})
+	_, err = vm.Execute(program2, memory, ExecuteOptions{})
+	if err != nil {
+		t.Fatalf("Execute 2 failed: %v", err)
+	}
+
+	// Execute third program - UserData should still be fresh
+	program3 := NewProgram([]Instruction{
+		NewInstruction(132, 0), // Store exec_id (will be 3)
+		NewInstruction(133, 3), // Verify it's 3 (not 1 or 2)
+		NewInstruction(OpHALT, 0),
+	})
+	_, err = vm.Execute(program3, memory, ExecuteOptions{})
+	if err != nil {
+		t.Fatalf("Execute 3 failed: %v", err)
+	}
+}
+
+func TestUserDataComplexTypes(t *testing.T) {
+	registry := NewInstructionRegistry()
+
+	type CustomStruct struct {
+		Name  string
+		Value int
+	}
+
+	// Store various complex types
+	storeComplexHandler := &mockHandler{
+		name: "STORE_COMPLEX",
+		fn: func(ctx ExecutionContext, operand int32) error {
+			userData := ctx.UserData()
+			userData["struct"] = CustomStruct{Name: "test", Value: 100}
+			userData["slice"] = []int{1, 2, 3, 4, 5}
+			userData["map"] = map[string]int{"a": 1, "b": 2}
+			return nil
+		},
+	}
+
+	// Retrieve and verify complex types
+	verifyComplexHandler := &mockHandler{
+		name: "VERIFY_COMPLEX",
+		fn: func(ctx ExecutionContext, operand int32) error {
+			userData := ctx.UserData()
+
+			// Verify struct
+			if val, ok := userData["struct"]; !ok {
+				t.Error("struct not found in UserData")
+			} else if s, ok := val.(CustomStruct); !ok {
+				t.Error("struct type assertion failed")
+			} else if s.Name != "test" || s.Value != 100 {
+				t.Errorf("struct = %+v, want {Name:test Value:100}", s)
+			}
+
+			// Verify slice
+			if val, ok := userData["slice"]; !ok {
+				t.Error("slice not found in UserData")
+			} else if slice, ok := val.([]int); !ok {
+				t.Error("slice type assertion failed")
+			} else if len(slice) != 5 || slice[0] != 1 || slice[4] != 5 {
+				t.Errorf("slice = %v, want [1 2 3 4 5]", slice)
+			}
+
+			// Verify map
+			if val, ok := userData["map"]; !ok {
+				t.Error("map not found in UserData")
+			} else if m, ok := val.(map[string]int); !ok {
+				t.Error("map type assertion failed")
+			} else if m["a"] != 1 || m["b"] != 2 {
+				t.Errorf("map = %v, want map[a:1 b:2]", m)
+			}
+
+			return nil
+		},
+	}
+
+	registry.Register(134, storeComplexHandler)
+	registry.Register(135, verifyComplexHandler)
+
+	vm := NewWithConfig(Config{
+		StackSize:           256,
+		InstructionRegistry: registry,
+	})
+
+	program := NewProgram([]Instruction{
+		NewInstruction(134, 0), // Store complex types
+		NewInstruction(135, 0), // Verify complex types
+		NewInstruction(OpHALT, 0),
+	})
+
+	memory := NewSimpleMemory(0)
+	_, err := vm.Execute(program, memory, ExecuteOptions{})
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+}

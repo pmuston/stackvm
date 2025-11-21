@@ -87,15 +87,17 @@ func (r *instructionRegistry) Names() map[Opcode]string {
 // executionContextImpl implements the ExecutionContext interface.
 // This is used by custom instruction handlers to interact with the VM.
 type executionContextImpl struct {
-	vm     *executor
-	memory Memory
+	vm       *executor
+	memory   Memory
+	userData map[string]interface{}
 }
 
 // newExecutionContext creates a new execution context.
 func newExecutionContext(vm *executor, memory Memory) *executionContextImpl {
 	return &executionContextImpl{
-		vm:     vm,
-		memory: memory,
+		vm:       vm,
+		memory:   memory,
+		userData: make(map[string]interface{}),
 	}
 }
 
@@ -179,4 +181,9 @@ func (ctx *executionContextImpl) Halt() {
 // IsHalted returns true if execution has been halted.
 func (ctx *executionContextImpl) IsHalted() bool {
 	return ctx.vm.halted
+}
+
+// UserData returns a map for storing and retrieving custom execution context data.
+func (ctx *executionContextImpl) UserData() map[string]interface{} {
+	return ctx.userData
 }
